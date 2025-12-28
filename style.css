@@ -1,0 +1,139 @@
+:root {
+    --main-color: #d35400;
+}
+
+body {
+    font-family: 'Cairo', sans-serif;
+    padding-bottom: 80px;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+/* --- Navbar --- */
+.navbar {
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* --- Cards --- */
+.game-card {
+    border: none;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(5px);
+    margin-bottom: 20px;
+    transition: background 0.3s;
+}
+
+[data-bs-theme="dark"] .game-card {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* --- Inputs (تعديل الألوان للوضوح) --- */
+.form-control,
+.form-select {
+    border-radius: 12px;
+    padding: 12px;
+    border: 2px solid transparent;
+    background: #f1f2f6; 
+    color: #2c3e50;
+    font-weight: bold;
+    font-size: 1.2rem;
+}
+
+/* Dark Mode Inputs High Contrast */
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+    background: #2c3e50; /* Darker Blue */
+    color: #ffffff; /* Pure White Text */
+    border-color: #34495e;
+}
+
+.form-control:focus,
+.form-select:focus {
+    box-shadow: none;
+    border-color: var(--main-color);
+    background: transparent;
+    color: inherit;
+}
+
+/* --- Guess Row --- */
+.guess-row {
+    background: #fff;
+    margin-bottom: 8px;
+    padding: 10px 15px;
+    border-radius: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    animation: slideIn 0.3s ease-out;
+}
+
+[data-bs-theme="dark"] .guess-row {
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: none;
+}
+
+.winner-row {
+    border: 2px solid #27ae60;
+    background: rgba(39, 174, 96, 0.1) !important;
+}
+
+/* --- SweetAlert Customization (القواعد المنورة) --- */
+[data-bs-theme="dark"] .swal2-popup {
+    background: #1e272e !important; 
+    color: #d2dae2 !important;
+}
+
+[data-bs-theme="dark"] .swal2-title {
+    color: #fff !important;
+}
+
+/* Alerts inside Rules */
+[data-bs-theme="dark"] .alert-success {
+    background-color: rgba(39, 174, 96, 0.15);
+    color: #2ecc71;
+    border: 1px solid #2ecc71;
+    box-shadow: 0 0 10px rgba(46, 204, 113, 0.2);
+}
+
+[data-bs-theme="dark"] .alert-warning {
+    background-color: rgba(243, 156, 18, 0.15);
+    color: #f1c40f;
+    border: 1px solid #f1c40f;
+    box-shadow: 0 0 10px rgba(241, 196, 15, 0.2);
+}
+
+/* --- Misc --- */
+.score-pill {
+    background: var(--main-color);
+    color: white;
+    padding: 5px 15px;
+    border-radius: 50px;
+    font-size: 0.9em;
+}
+
+.timer-box {
+    font-family: monospace;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #f39c12;
+}
+
+.timer-danger {
+    color: #e74c3c !important;
+    animation: blink 1s infinite;
+}
+
+.locked-input {
+    background-color: #95a5a6 !important;
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+[data-bs-theme="dark"] .locked-input {
+    background-color: #34495e !important;
+}
+
+@keyframes blink { 50% { opacity: 0.5; } }
+@keyframes slideIn { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
