@@ -1,48 +1,42 @@
-// 1. استدعاء مكتبات فايربيس
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, push, onValue, remove, update, increment } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getDatabase, ref, set, push, onValue, remove, update, increment, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-// 2. بيانات مشروعك (مظبوطة وجاهزة)
+// 🔴 تأكد إن بياناتك هنا مظبوطة زي ما كانت
 const firebaseConfig = {
     apiKey: "AIzaSyCw9YuyXWAZLjuyhh8HyuqcTof-alEByiI",
     authDomain: "coffee-guess.firebaseapp.com",
-    // 👇 الرابط ده هو سر الشغل كله
-    databaseURL: "https://coffee-guess-default-rtdb.firebaseio.com",
+    databaseURL: "https://coffee-guess-default-rtdb.firebaseio.com", 
     projectId: "coffee-guess",
     storageBucket: "coffee-guess.firebasestorage.app",
     messagingSenderId: "594892061994",
     appId: "1:594892061994:web:814a87a35981a8414af253"
 };
 
-// تهيئة الاتصال
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // --- Global Variables ---
 let gameState = {
-    secret: "",
-    digits: 4,
-    allowDupes: false,
-    duration: 2,
-    cyclesTotal: 3,
-    currentCycle: 1,
-    endTime: 0,
     active: false,
-    hasGuessed: false 
+    hasGuessed: false,
+    secret: "",
+    digits: 4
 };
 let myName = localStorage.getItem('coffee_user') || "";
 let timerInterval = null;
 
-// --- Init ---
+// --- 1. التجهيز عند فتح الموقع ---
+// لو الاسم موجود، خليه يدخل.. لو مش موجود يظهره شاشة الاسم
 if (myName) {
     document.getElementById('usernameInput').value = myName;
     document.getElementById('loginScreen').style.display = 'none';
-    // بنستنى الفايربيس يقولنا حالة اللعبة
+    // هنظهر شاشة الانتظار مؤقتاً لحد ما الفايربيس يقولنا إحنا فين
+    document.getElementById('setupScreen').style.display = 'none'; 
+    createWaitingScreen().style.display = 'block';
 }
 
-// --- Firebase Listeners (الرادار) ---
-
-// 1. مراقبة حالة اللعبة
+// --- 2. الرادار (مراقبة حالة اللعبة) ---
+// ده أهم جزء: بيشوف لو فيه لعبة شغالة يخفيك الإعدادات ويدخلك اللعب علطول
 onValue(ref(db, 'gameState'), (snapshot) => {
     const data = snapshot.val();
     const setup = document.getElementById('setupScreen');
@@ -50,34 +44,35 @@ onValue(ref(db, 'gameState'), (snapshot) => {
     const waiting = document.getElementById('waitingScreen') || createWaitingScreen();
 
     if (!data) {
-        // مفيش لعبة شغالة (Lobby)
-        game.style.display = 'none';
+        // مفيش لعبة شغالة حالياً -> اظهر الإعدادات عشان حد يبدأ
         waiting.style.display = 'none';
+        game.style.display = 'none';
         setup.style.display = 'block'; 
         showFloatingExit(false);
     } else {
-        // فيه لعبة شغالة
+        // فيه لعبة شغالة! -> اخفي الإعدادات فوراً واظهر اللعبة
+        waiting.style.display = 'none';
         setup.style.display = 'none';
+        game.style.display = 'block';
         
         // تحديث البيانات المحلية
         gameState.secret = data.secret ? data.secret.toString() : "";
         gameState.digits = data.digits;
-        gameState.allowDupes = data.allowDupes;
+        gameState.endTime = data.endTime;
         gameState.cyclesTotal = data.totalCycles;
         gameState.currentCycle = data.currentCycle;
-        gameState.endTime = data.endTime;
-        
-        // تحديث الواجهة
-        const dupeText = gameState.allowDupes ? "تكرار" : "بلا تكرار";
-        document.getElementById('gameModeDisplay').innerText = `${gameState.digits} خانات | ${dupeText}`;
-        document.getElementById('myGuess').placeholder = "?".repeat(gameState.digits);
-        document.getElementById('cycleBadge').innerText = `جولة ${gameState.currentCycle} / ${gameState.cyclesTotal}`;
+        gameState.allowDupes = data.allowDupes;
+
+        // تحديث شكل الواجهة
+        document.getElementById('gameModeDisplay').innerText = `${data.digits} أرقام | ${data.allowDupes ? 'بتكرار' : 'بدون تكرار'}`;
+        document.getElementById('myGuess').placeholder = "?".repeat(data.digits);
+        document.getElementById('cycleBadge').innerText = `جولة ${data.currentCycle} / ${data.totalCycles}`;
         
         showFloatingExit(true);
 
-        // حساب الوقت
+        // التايمر وحالة اللعب
         const now = Date.now();
-        const diff = gameState.endTime - now;
+        const diff = data.endTime - now;
 
         if (data.winner) {
              handleWinState(data.winner);
@@ -89,19 +84,21 @@ onValue(ref(db, 'gameState'), (snapshot) => {
     }
 });
 
-// 2. مراقبة التخمينات
+// --- 3. مراقبة التخمينات (عشان نشوف بعض) ---
 onValue(ref(db, 'guesses'), (snapshot) => {
     const list = document.getElementById('guessesList');
-    list.innerHTML = '';
+    list.innerHTML = ''; // تنظيف القائمة عشان منكررش
+    
     const arr = [];
-    snapshot.forEach(c => arr.push(c.val()));
-    // نعرض أحدث تخمين فوق
+    snapshot.forEach(child => arr.push(child.val()));
+    
+    // اعرض الجديد فوق
     arr.reverse().forEach(g => {
         addGuessToUI(g.player, g.guess, g.bulls, g.cows);
     });
 });
 
-// 3. مراقبة الاسكور
+// --- 4. مراقبة الاسكور ---
 onValue(ref(db, 'scores'), (s) => {
     const b = document.getElementById('scoreboard'); 
     b.innerHTML='';
@@ -114,32 +111,39 @@ onValue(ref(db, 'scores'), (s) => {
 });
 
 
-// --- Game Functions (مربوطة بـ window عشان الزراير تشوفها) ---
+// --- دوال اللعب (window functions) ---
 
+// دالة البدء (معدلة عشان متعملش ريست بالغلط)
 window.startGame = function() {
-    const digits = parseInt(document.getElementById('digitsCount').value);
-    const duration = parseInt(document.getElementById('gameDuration').value);
-    const cycles = parseInt(document.getElementById('cyclesCount').value);
-    const allowDupes = document.getElementById('allowDuplicates').checked;
+    // هنتأكد الأول من السيرفر إن مفيش لعبة شغالة
+    get(ref(db, 'gameState')).then((snapshot) => {
+        if (snapshot.exists()) {
+            Swal.fire('استنى!', 'فيه لعبة شغالة بالفعل، هندخلك عليها دلوقتي.', 'warning');
+        } else {
+            // لو مفيش لعبة، ابدأ يا باشا
+            const digits = parseInt(document.getElementById('digitsCount').value);
+            const duration = parseInt(document.getElementById('gameDuration').value);
+            const cycles = parseInt(document.getElementById('cyclesCount').value);
+            const allowDupes = document.getElementById('allowDuplicates').checked;
 
-    const secret = generateSecret(digits, allowDupes);
-    const endTime = Date.now() + (duration * 60 * 1000);
+            const secret = generateSecret(digits, allowDupes);
+            const endTime = Date.now() + (duration * 60 * 1000);
 
-    // إرسال للسيرفر
-    set(ref(db, 'gameState'), {
-        secret: secret,
-        digits: digits,
-        duration: duration,
-        allowDupes: allowDupes,
-        totalCycles: cycles,
-        currentCycle: 1,
-        endTime: endTime,
-        startedBy: myName
+            set(ref(db, 'gameState'), {
+                secret: secret,
+                digits: digits,
+                duration: duration,
+                allowDupes: allowDupes,
+                totalCycles: cycles,
+                currentCycle: 1,
+                endTime: endTime,
+                startedBy: myName
+            });
+            
+            remove(ref(db, 'guesses'));
+            remove(ref(db, 'gameState/winner'));
+        }
     });
-    
-    // تصفير القديم
-    remove(ref(db, 'guesses'));
-    remove(ref(db, 'gameState/winner'));
 }
 
 window.submitGuess = function() {
@@ -154,7 +158,7 @@ window.submitGuess = function() {
 
     const result = calculateBullsAndCows(gameState.secret, guess);
     
-    // إرسال التخمين
+    // Push = إضافة تخمين جديد (مش مسح القديم)
     push(ref(db, 'guesses'), {
         player: myName,
         guess: guess,
@@ -165,7 +169,7 @@ window.submitGuess = function() {
 
     document.getElementById('myGuess').value = '';
     
-    // قفل المحاولة مؤقتاً
+    // قفل المحاولة عليك إنت بس
     gameState.hasGuessed = true;
     toggleInputs(false);
     document.getElementById('guessLockedMsg').style.display = 'block';
@@ -177,54 +181,49 @@ window.submitGuess = function() {
 }
 
 window.endRoundEarly = function() {
-    // إنهاء الوقت فوراً للكل
-    update(ref(db, 'gameState'), {
-        endTime: Date.now() - 1000 
-    });
+    // إنهاء الوقت للكل
+    update(ref(db, 'gameState'), { endTime: Date.now() - 1000 });
 }
 
 window.startNextCycle = function() {
-    // حساب وقت الجولة الجديدة
-    const nextEndTime = Date.now() + (gameState.duration || 2) * 60 * 1000;
-    
-    update(ref(db, 'gameState'), {
-        endTime: nextEndTime,
-        currentCycle: increment(1)
+    // التحقق من السيرفر قبل التعديل
+    get(ref(db, 'gameState')).then((snap) => {
+        if(snap.exists()) {
+           const d = snap.val();
+           const nextEndTime = Date.now() + (d.duration || 2) * 60 * 1000;
+           update(ref(db, 'gameState'), {
+               endTime: nextEndTime,
+               currentCycle: (d.currentCycle || 1) + 1,
+               winner: null // مسح الفائز للجولة الجديدة
+           });
+           remove(ref(db, 'guesses')); // مسح التخمينات للجولة الجديدة
+        }
     });
-    // مسح تخمينات الجولة اللي فاتت
-    remove(ref(db, 'guesses'));
-    // إزالة الفائز لو كان فيه حد كسب الجولة اللي فاتت عشان نكمل
-    remove(ref(db, 'gameState/winner'));
 }
 
 window.endGameImmediately = function() {
     Swal.fire({
         title: 'إنهاء اللعبة للكل؟',
-        text: "هترجعوا كلكم للشاشة الرئيسية",
+        text: "الكل هيرجع لشاشة البداية",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#d33',
-        confirmButtonText: 'اقفل يا ريس'
+        confirmButtonText: 'نعم، إنهاء'
     }).then((r) => {
         if(r.isConfirmed) {
-            // حذف الجيم يرجع الكل للبداية
-            set(ref(db, 'gameState'), null);
+            set(ref(db, 'gameState'), null); // ده اللي بيرجعنا للبداية
             remove(ref(db, 'guesses'));
         }
     });
 }
 
-// --- State Handlers ---
+// --- Logic Helpers ---
 
 function handlePlayingState(endTime) {
     document.getElementById('gameScreen').style.display = 'block';
     document.getElementById('gameStatusAlert').style.display = 'none';
     document.getElementById('nextCycleBtn').style.display = 'none';
     document.getElementById('endRoundBtn').style.display = 'block';
-    
-    // لو الجولة اتغيرت (أو بدأنا جيم جديد)، افتح التخمين تاني
-    // (هنا بنعتمد ان لو الرسالة ظاهرة، يبقى احنا قفلناها، لكن لو الجولة جديدة بنفتحها)
-    // *تحسين بسيط: بنفتح الانبوت لو الوقت لسه شغال*
     
     startTimer(endTime);
 }
@@ -239,21 +238,20 @@ function handleTimeUpState() {
     const alertBox = document.getElementById('gameStatusAlert');
     alertBox.style.display = 'block';
 
-    if (gameState.currentCycle >= gameState.cyclesTotal) {
-        // Game Over
+    // التأكد من إن البيانات موجودة قبل المقارنة
+    if (gameState.cyclesTotal && gameState.currentCycle >= gameState.cyclesTotal) {
         alertBox.className = 'alert alert-danger';
         alertBox.innerHTML = `🏁 خلصت! الرقم: ${gameState.secret}`;
         document.getElementById('resetBtn').style.display = 'block';
     } else {
-        // Pause
         alertBox.className = 'alert alert-warning';
-        alertBox.innerHTML = `✋ استراحة...`;
+        alertBox.innerHTML = `✋ الوقت خلص!`;
         document.getElementById('nextCycleBtn').style.display = 'block';
-        
-        // فك القفل للجولة الجاية (محلياً)
-        gameState.hasGuessed = false;
-        document.getElementById('guessLockedMsg').style.display = 'none';
     }
+    
+    // فتح القفل للجولة الجاية
+    gameState.hasGuessed = false;
+    document.getElementById('guessLockedMsg').style.display = 'none';
 }
 
 function handleWinState(winnerName) {
@@ -273,8 +271,34 @@ function handleWinState(winnerName) {
     document.getElementById('resetBtn').style.display = 'block';
 }
 
+function startTimer(endTime) {
+    if(timerInterval) clearInterval(timerInterval);
+    const display = document.getElementById('timerDisplay');
+    
+    const now = Date.now();
+    // بنفتح الانبوت فقط لو انا لسه مخمنتش
+    if (endTime > now && !gameState.hasGuessed) {
+        gameState.active = true;
+        toggleInputs(true);
+    }
 
-// --- Helpers ---
+    timerInterval = setInterval(() => {
+        const now = Date.now();
+        const diff = endTime - now;
+        if (diff <= 0) {
+            clearInterval(timerInterval);
+            display.innerText = "00:00";
+        } else {
+            const m = Math.floor(diff / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            display.innerText = `${m}:${s < 10 ? '0'+s : s}`;
+            if(diff < 30000) display.classList.add('timer-danger');
+            else display.classList.remove('timer-danger');
+        }
+    }, 1000);
+}
+
+// --- Core Logic ---
 function generateSecret(length, allowDupes) {
     let result = "";
     if (allowDupes) {
@@ -298,33 +322,6 @@ function calculateBullsAndCows(secret, guess) {
     return { bulls, cows };
 }
 
-function startTimer(endTime) {
-    if(timerInterval) clearInterval(timerInterval);
-    const display = document.getElementById('timerDisplay');
-    
-    // نفتح الانبوت لو انا لسه مخمنتش والوقت شغال
-    const now = Date.now();
-    if (endTime > now && !gameState.hasGuessed) {
-        gameState.active = true;
-        toggleInputs(true);
-    }
-
-    timerInterval = setInterval(() => {
-        const now = Date.now();
-        const diff = endTime - now;
-        if (diff <= 0) {
-            clearInterval(timerInterval);
-            display.innerText = "00:00";
-        } else {
-            const m = Math.floor(diff / 60000);
-            const s = Math.floor((diff % 60000) / 1000);
-            display.innerText = `${m}:${s < 10 ? '0'+s : s}`;
-            if(diff < 30000) display.classList.add('timer-danger');
-            else display.classList.remove('timer-danger');
-        }
-    }, 1000);
-}
-
 function toggleInputs(enabled) {
     const inp = document.getElementById('myGuess');
     const btn = document.getElementById('guessBtn');
@@ -341,15 +338,41 @@ function toggleInputs(enabled) {
 function addGuessToUI(player, guess, bulls, cows) {
     const list = document.getElementById('guessesList');
     const isWin = bulls === gameState.digits;
+    
+    // تصميم مختلف عشان يوضح مين اللاعب
     const html = `
         <div class="guess-row ${isWin ? 'winner-row' : ''}">
-            <div><span class="fw-bold text-info">${player}</span> <span class="mx-2 font-monospace fs-5">${guess}</span></div>
-            <div>${bulls}<i class="bi bi-geo-alt-fill text-success ms-1"></i> ${cows}<i class="bi bi-arrow-repeat text-warning ms-1"></i></div>
+            <div class="d-flex align-items-center">
+                <span class="badge bg-secondary me-2">${player}</span>
+                <span class="font-monospace fs-4 fw-bold letter-spacing-2">${guess}</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-success rounded-pill">${bulls} <i class="bi bi-geo-alt-fill"></i></span>
+                <span class="badge bg-warning text-dark rounded-pill">${cows} <i class="bi bi-arrow-repeat"></i></span>
+            </div>
         </div>`;
     list.insertAdjacentHTML('afterbegin', html);
 }
 
-// باقي الدوال العامة (window functions)
+// --- Helpers UI ---
+function createWaitingScreen() {
+    let div = document.getElementById('waitingScreen');
+    if(!div) {
+        div = document.createElement('div');
+        div.id = 'waitingScreen';
+        div.className = 'text-center mt-5 text-muted';
+        div.innerHTML = `<h3>⏳ جاري الاتصال...</h3><p>بنشوف لو فيه لعبة شغالة</p>`;
+        div.style.display = 'none';
+        document.querySelector('.container').appendChild(div);
+    }
+    return div;
+}
+
+function showFloatingExit(show) {
+    const btn = document.getElementById('exitFloatingBtn');
+    if(btn) btn.style.display = show ? 'block' : 'none';
+}
+
 window.login = function() {
     const n = document.getElementById('usernameInput').value.trim();
     if(!n) return Swal.fire('الاسم مطلوب');
@@ -357,7 +380,9 @@ window.login = function() {
     localStorage.setItem('coffee_user', myName);
     document.getElementById('loginScreen').style.display='none';
     
-    // تسجيل اللاعب في السكوربورد
+    // اظهر الانتظار لحد ما الداتا تحمل
+    createWaitingScreen().style.display = 'block';
+    
     update(ref(db, `scores/${myName}`), { name: myName });
 }
 
@@ -367,7 +392,6 @@ window.toggleTheme = function() {
     document.getElementById('themeIcon').className = newT==='dark'?'bi bi-moon-stars-fill':'bi bi-sun-fill';
 }
 if(localStorage.getItem('theme') === 'light') window.toggleTheme();
-// استبدل دالة showRules القديمة دي بالكود ده 👇
 
 window.showRules = function() { 
     Swal.fire({
@@ -375,35 +399,19 @@ window.showRules = function() {
         html: `
             <div class="text-end" style="direction: rtl;">
                 <p class="mb-3 fw-bold">الهدف: خمن الرقم السري قبل الوقت ما يخلص!</p>
-                
-                <div class="alert alert-success d-flex align-items-center p-2 mb-2" style="border: 1px solid #198754;">
+                <div class="alert alert-success d-flex align-items-center p-2 mb-2">
                     <div class="fs-2 me-3 ms-1">🎯</div>
-                    <div>
-                        <strong>الرقم الأخضر (مكان صح):</strong>
-                        <br><small>الرقم موجود وفي مكانه الصح بالظبط.</small>
-                        <br><span class="badge bg-success mt-1">مثال: الرقم 1234 وانت كتبت 1...</span>
-                    </div>
+                    <div><strong>الأخضر:</strong> رقم صح وفي مكانه الصح.</div>
                 </div>
-
-                <div class="alert alert-warning d-flex align-items-center p-2 text-dark" style="border: 1px solid #ffc107;">
+                <div class="alert alert-warning d-flex align-items-center p-2 text-dark">
                     <div class="fs-2 me-3 ms-1">⚠️</div>
-                    <div>
-                        <strong>الرقم الأصفر (مكان غلط):</strong>
-                        <br><small>الرقم موجود في السر، بس أنت حطيته في خانة غلط.</small>
-                        <br><span class="badge bg-warning text-dark mt-1">مثال: الرقم 1234 وانت كتبت 4...</span>
-                    </div>
-                </div>
-
-                <hr>
-                <div class="text-center text-muted small">
-                    <i class="bi bi-people-fill"></i> ملحوظة: في الأونلاين، تخميناتك بتظهر للكل، ركز في لعب غيرك عشان تكسب! 😉
+                    <div><strong>الأصفر:</strong> رقم صح بس مكانه غلط.</div>
                 </div>
             </div>
-        `,
-        confirmButtonText: 'فهمت، يلا بينا! 👍',
-        confirmButtonColor: '#d35400'
+        `
     }); 
 }
+
 window.updateDupesLabel = function() {
      const isChecked = document.getElementById('allowDuplicates').checked;
     const label = document.getElementById('dupesLabel');
@@ -416,21 +424,8 @@ window.updateDupesLabel = function() {
     }
 }
 
-function createWaitingScreen() {
-    const div = document.createElement('div');
-    div.id = 'waitingScreen';
-    div.style.display = 'none';
-    document.querySelector('.container').appendChild(div);
-    return div;
-}
-
-function showFloatingExit(show) {
-    const btn = document.getElementById('exitFloatingBtn');
-    if(btn) btn.style.display = show ? 'block' : 'none';
-}
-
-// دالة اعادة اللعب المحلية (بتستخدم لما الجيم يخلص عشان ترجعنا للوبي)
 window.resetGame = function() {
+    // ريست محلي فقط للفيو، الريست الحقيقي من endGameImmediately
     set(ref(db, 'gameState'), null);
     remove(ref(db, 'guesses'));
 }
